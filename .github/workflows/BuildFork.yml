@@ -1,0 +1,95 @@
+name: Build APK
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  push:
+    branches: [ main ]
+    paths: [ patch.py, .github/workflows/BuildFork.yml ]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build even if this upstream commit was already built
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM: AcideFluorhydrique/geminiAssist
+  UPSTREAM_BRANCH: main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check upstream
+        id: up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git ls-remote "https://github.com/$UPSTREAM.git" "refs/heads/$UPSTREAM_BRANCH" | cut -f1)
+          [ -n "$sha" ] || { echo "Could not read upstream head"; exit 1; }
+          psha=$(sha256sum patch.py | cut -c1-6)
+          tag="up-${sha:0:7}-p$psha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.force }}" != "true" ] && gh release view "$tag" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Already built: $tag"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone upstream
+        if: steps.up.outputs.skip != 'true'
+        run: |
+          git clone --depth 1 --branch "$UPSTREAM_BRANCH" "https://github.com/$UPSTREAM.git" upstream
+          git -C upstream checkout --quiet ${{ steps.up.outputs.sha }}
+
+      - name: Apply patch
+        if: steps.up.outputs.skip != 'true'
+        run: python3 patch.py upstream
+
+      - uses: actions/setup-java@v4
+        if: steps.up.outputs.skip != 'true'
+        with:
+          java-version: 17
+          distribution: temurin
+          cache: gradle
+          cache-dependency-path: |
+            upstream/**/*.gradle*
+            upstream/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Build debug APK
+        if: steps.up.outputs.skip != 'true'
+        working-directory: upstream
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Collect APK
+        if: steps.up.outputs.skip != 'true'
+        run: |
+          mkdir out
+          cp upstream/app/build/outputs/apk/debug/*.apk out/geminiAssist.apk
+
+      - uses: actions/upload-artifact@v4
+        if: steps.up.outputs.skip != 'true'
+        with:
+          name: geminiAssist
+          path: out/geminiAssist.apk
+
+      - name: Publish release
+        if: steps.up.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.up.outputs.tag }}"
+          gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$tag" out/geminiAssist.apk \
+            --title "geminiAssist (upstream ${tag:3:7})" \
+            --notes "Upstream $UPSTREAM@${{ steps.up.outputs.sha }} with patch.py applied."
