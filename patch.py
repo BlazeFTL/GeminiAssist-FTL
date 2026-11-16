@@ -72,6 +72,19 @@ if js not in s:
     fail(js.strip())
 s = s.replace(js, "        chatWebSettings.setUserAgentString(modUserAgent());  //needed for login via Google\n" + js, 1)
 
+# Desktop-like user agent made Gemini serve its desktop popover menu. Keep the mobile layout,
+# only hide the WebView markers ("; wv", "Version/x") so Google sign-in still works.
+s = cut(s, "    public String modUserAgent()", "    @Override\n    public void onRequestPermissionsResult")
+ua = (
+    "    public String modUserAgent() {\n"
+    "        return WebSettings.getDefaultUserAgent(context)\n"
+    "                .replace(\"; wv\", \"\")\n"
+    "                .replaceAll(\"Version/[\\\\d.]+\\\\s\", \"\");\n"
+    "    }\n\n"
+)
+k = s.find("    @Override\n    public void onRequestPermissionsResult")
+s = s[:k] + ua + s[k:]
+
 for name in [
     "static android.webkit.WebView.HitTestResult.SRC_ANCHOR_TYPE",
     "static android.webkit.WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE",
