@@ -12,6 +12,10 @@ on:
         description: Build even if this upstream commit was already built
         type: boolean
         default: false
+      release:
+        description: Create a release with the patch features as changelog
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -77,14 +81,30 @@ jobs:
           mkdir out
           cp upstream/app/build/outputs/apk/debug/*.apk out/geminiAssist.apk
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
         if: steps.up.outputs.skip != 'true'
+        uses: actions/upload-artifact@v7
         with:
-          name: geminiAssist
           path: out/geminiAssist.apk
+          archive: false
+
+      - name: Write changelog
+        if: steps.up.outputs.skip != 'true' && (github.event_name != 'workflow_dispatch' || inputs.release)
+        run: |
+          cat > notes.md <<EOF
+          Upstream $UPSTREAM@${{ steps.up.outputs.sha }} with patch.py applied.
+
+          ### Patch features
+          - **All URLs allowed.** Allowlist, request blocking and the HTTPS-only rule are removed.
+          - **Toggle button removed.** The hand button, swipe-to-hide, drag logic and long-press reset chat are gone.
+          - **Link long-press URL copy removed.** Image long-press and saving are unchanged.
+          - **Google sign-in fix.** Mobile user agent is applied at startup with the WebView markers (\`; wv\`, \`Version/x\`) stripped.
+          - **No desktop popover.** The desktop-style Linux user agent is no longer used, so Gemini keeps its mobile layout.
+          - **Renamed to Gemini-Lite** with a new launcher icon: legacy, adaptive and themed (monochrome).
+          EOF
 
       - name: Publish release
-        if: steps.up.outputs.skip != 'true'
+        if: steps.up.outputs.skip != 'true' && (github.event_name != 'workflow_dispatch' || inputs.release)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -92,4 +112,4 @@ jobs:
           gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
           gh release create "$tag" out/geminiAssist.apk \
             --title "geminiAssist (upstream ${tag:3:7})" \
-            --notes "Upstream $UPSTREAM@${{ steps.up.outputs.sha }} with patch.py applied."
+            --notes-file notes.md
