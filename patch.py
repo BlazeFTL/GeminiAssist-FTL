@@ -2,13 +2,20 @@
 """Usage: python3 patch.py <path-to-geminiAssist-checkout>
 
 Removes the URL-restriction hand button and allows all URLs.
+Renames the app to Gemini-Lite and replaces the launcher icon with assets/ (next to this file).
 Fails loudly when an anchor is missing, so upstream changes never go unnoticed.
 """
 import re
+import shutil
 import sys
 from pathlib import Path
 
+APP_NAME = "Gemini-Lite"
+
+here = Path(__file__).resolve().parent
+assets = here / "assets"
 root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
+res = root / "app/src/main/res"
 java = root / "app/src/main/java/io/github/acidefluorhydrique/geminiassist/MainActivity.java"
 layout = root / "app/src/main/res/layout/activity_main.xml"
 delete = [
@@ -16,6 +23,8 @@ delete = [
     "app/src/main/res/drawable/restricted.xml",
     "app/src/main/res/drawable/unrestricted.xml",
     "app/src/main/res/drawable/button_background.xml",
+    "app/src/main/res/drawable/ic_launcher_foreground.xml",
+    "app/src/main/res/drawable/ic_launcher_monochrome.xml",
 ]
 
 
@@ -113,5 +122,32 @@ for f in delete:
     p = root / f
     if p.exists():
         p.unlink()
+
+# App name: every locale that defines app_name
+renamed = []
+for f in res.glob("values*/strings.xml"):
+    t = f.read_text(encoding="utf-8")
+    t, n = re.subn(
+        r'(<string\s+name="app_name"[^>]*>)[^<]*(</string>)',
+        lambda m: m.group(1) + APP_NAME + m.group(2),
+        t,
+    )
+    if n:
+        f.write_text(t, encoding="utf-8")
+        renamed.append(f.parent.name)
+if "values" not in renamed:
+    fail('app_name in res/values/strings.xml')
+
+# Icon: legacy mipmaps, adaptive foreground and monochrome (PNG), white adaptive background
+if not (assets / "res").is_dir() or not (assets / "ic_launcher-playstore.png").is_file():
+    fail("assets/res and assets/ic_launcher-playstore.png next to patch.py")
+bg = res / "values/ic_launcher_background.xml"
+x = bg.read_text(encoding="utf-8")
+x, n = re.subn(r'(<color\s+name="ic_launcher_background">)[^<]*(</color>)', r"\g<1>#FFFFFF\g<2>", x)
+if n != 1:
+    fail("ic_launcher_background color")
+bg.write_text(x, encoding="utf-8")
+shutil.copytree(assets / "res", res, dirs_exist_ok=True)
+shutil.copy2(assets / "ic_launcher-playstore.png", root / "app/src/main/ic_launcher-playstore.png")
 
 print("patch.py: done")

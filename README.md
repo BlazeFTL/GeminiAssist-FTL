@@ -1,62 +1,72 @@
-# geminiAssist
+# Gemini-Lite
 
-<p>
-  <a href="https://f-droid.org/en/packages/io.github.acidefluorhydrique.geminiassist/">
-    <img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="70" />
-  </a>
-  <a href="https://github.com/AcideFluorhydrique/geminiAssist/releases">
-    <img src="https://github.com/mmlado/GapSign/blob/main/assets/badges/badge_github.png" alt="Get it on GitHub" height="70" />
-  </a>
-  <a href="https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://add/https://f-droid.org/en/packages/io.github.acidefluorhydrique.geminiassist/">
-    <img src="https://github.com/mmlado/GapSign/blob/main/assets/badges/badge_obtainium.png" alt="Get it on Obtainium" height="70" />
-  </a>
-</p>
+Gemini-Lite is a patched build of [geminiAssist](https://github.com/AcideFluorhydrique/geminiAssist), a lightweight WebView wrapper for Gemini.
 
-geminiAssist is a simple WebView wrapper for Gemini. It blocks all URLs which are not essential.
+This repository does not carry modified app sources. A GitHub Actions workflow clones upstream, applies `patch.py`, builds the APK and publishes it as a release.
 
-- 🔒 **Privacy-focused**: Blocks unnecessary URLs and tracking
-- 🎯 **Focused interface**: Clean chat experience without browser distractions
-- 🔄 **Toggle blocking**: Switch between restricted and unrestricted modes
-- 📱 **Lightweight**: Minimal app focused on core functionality
+## What the patch does
 
-## Usage
+### Removes URL restriction
 
-- Click the button at the top right to switch URL blocking on/off.
-- Swipe up a bit to hide the button.
-- **Drag** the button to move it anywhere on the screen. Its position is remembered.
-- **Long press** the button to reset the chat. This clears cookies, cache and site
-  data, and signs you out.
+Upstream blocks every request that is not on a small Google allowlist or not HTTPS. Gemini-Lite allows all URLs.
+
+- Removes the allowlist and the request interception and URL-override logic.
+- Removes the hand button that toggled restricted mode.
+- Removes the swipe-to-hide handling, the drag-and-snap logic and the button drawables.
+- Removes the long-press "Reset chat" action that lived on that button.
+- Removes the link long-press "copy blocked URL" behavior. Image long-press and saving are unchanged.
+- Removes the matching layout button and now-unused imports.
+- Fails the build if any anchor or leftover reference is found, so upstream changes never go unnoticed.
+
+### Fixes user agent and Google sign-in
+
+- Upstream applied its user agent only when the restriction toggle was switched. Gemini-Lite applies it at startup, so Google sign-in works without any toggle.
+- Upstream used a desktop-style Linux user agent, which made Gemini serve its desktop popover menu.
+- Gemini-Lite keeps the mobile user agent and strips only the WebView markers (`; wv` and `Version/x.x`). The mobile layout stays and Google sign-in still works.
+
+### Branding
+
+- App name is changed to **Gemini-Lite** in all locales that define `app_name`.
+- Launcher icon is replaced with the Gemini-Lite icon:
+  - Legacy `ic_launcher.png` for mdpi to xxxhdpi.
+  - Adaptive icon foreground and monochrome (themed icon) layers.
+  - Adaptive icon background set to white.
+  - Play Store icon at `app/src/main/ic_launcher-playstore.png`.
+- The application ID is unchanged.
+
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `patch.py` | Applies all changes to an upstream checkout. |
+| `assets/res/` | Icon resources copied into `app/src/main/res/`. |
+| `assets/ic_launcher-playstore.png` | Source icon, 512x512. |
+| `.github/workflows/BuildFork.yml` | Clones upstream, patches, builds and releases. |
+
+## Build
+
+The workflow runs every 12 hours and on pushes to `patch.py`. It builds only when the upstream commit or `patch.py` changed since the last release. Run it manually with **force** to rebuild.
+
+To patch locally:
+
+```
+git clone https://github.com/AcideFluorhydrique/geminiAssist upstream
+python3 patch.py upstream
+cd upstream && ./gradlew assembleDebug
+```
+
+`patch.py` is not idempotent. Run it on a fresh checkout only.
+
+## Updating the icon
+
+Replace the files in `assets/`, then change `patch.py` (any edit) so the workflow detects a new build.
 
 ## License
 
-This app is licensed under the GPLv3.
+GPLv3, same as upstream.
 
 The app uses:
-- Parts from gptAssist (https://github.com/woheller69/gptAssist) which is licensed under the GPLv3
-- Parts from GMaps WV (https://gitlab.com/divested-mobile/maps) which is licensed under the GPLv3
+- Parts from gptAssist (https://github.com/woheller69/gptAssist), GPLv3
+- Parts from GMaps WV (https://gitlab.com/divested-mobile/maps), GPLv3
 
-## Contributing
-
-If you find a bug, please open an issue in the Github repository, assuming one does not already exist.
-- Clearly describe the issue including steps to reproduce when it is a bug. In some cases screenshots can be supportive.
-- Make sure you mention the Android version and the device you have used when you encountered the issue.
-- Make your description as precise as possible.
-
-If you know the solution to a bug please report it in the corresponding issue and if possible modify the code and create a pull request.
-
-## Notice
-
-```
-Google has announced that, starting in 2026/2027, all apps on certified Android devices
-will require the developer to submit personal identity details directly to Google.
-Since the developers of this app do not agree to this requirement, this app will no longer
-work on certified Android devices after that time.
-```
-
-## Support Developer
-
-`AcideFluorhydrique`
-
-[![Donate with Bitcoin](https://img.shields.io/badge/Donate-Bitcoin-orange?style=for-the-badge&logo=bitcoin)](bitcoin:bc1qhj6yuszhcu5mhydrhn72l29pnr5uaapqsnqwk6)
-
-> **Note:** Please double-check the address before sending. Thank you for your support!
+Upstream project and credit: `AcideFluorhydrique`.
