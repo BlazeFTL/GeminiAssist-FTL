@@ -32,8 +32,10 @@ def fail(msg):
     sys.exit(f"patch.py: anchor not found: {msg}")
 
 
-def remove(s, text):
+def remove(s, text, optional=False):
     if text not in s:
+        if optional:
+            return s
         fail(text.strip()[:80])
     return s.replace(text, "", 1)
 
@@ -57,11 +59,16 @@ for line in [
     "    private boolean buttonDragging = false;  //the user is moving the button, do not snap it back on layout\n",
     "    private static final ArrayList<String> allowedDomains = new ArrayList<String>();\n\n",
     "        swipeTouchListener = null;\n",
-    "        restricted = true;\n",
     "        restrictedButton = findViewById(R.id.restricted);\n        makeButtonDraggable();\n",
     "        //Restrict what gets loaded\n        initURLs();\n",
 ]:
     s = remove(s, line)
+
+s = remove(s, "        restricted = true;\n", optional=True)
+s = remove(s, "        //Remember the last mode and whether the button was hidden; a fresh install starts restricted\n", optional=True)
+s = remove(s, "        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);\n", optional=True)
+s = remove(s, '        restricted = prefs.getBoolean("restricted", true);\n', optional=True)
+s = remove(s, '        if (prefs.getBoolean("buttonHidden", false)) restrictedButton.setVisibility(View.GONE);\n', optional=True)
 
 s = cut(s, "    @Override\n    protected void onResume()", "    @Override\n    protected void onCreate")
 s = cut(s, "            //Keep these in sync!", "            //WebResourceError is API 23+")
