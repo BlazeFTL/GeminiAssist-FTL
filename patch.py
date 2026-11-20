@@ -20,6 +20,7 @@ java = root / "app/src/main/java/io/github/acidefluorhydrique/geminiassist/MainA
 layout = root / "app/src/main/res/layout/activity_main.xml"
 delete = [
     "app/src/main/java/io/github/acidefluorhydrique/geminiassist/SwipeTouchListener.java",
+    "app/src/main/java/io/github/acidefluorhydrique/geminiassist/GithubStar.java",
     "app/src/main/res/drawable/restricted.xml",
     "app/src/main/res/drawable/unrestricted.xml",
     "app/src/main/res/drawable/button_background.xml",
@@ -61,6 +62,8 @@ for line in [
     "        swipeTouchListener = null;\n",
     "        restrictedButton = findViewById(R.id.restricted);\n        makeButtonDraggable();\n",
     "        //Restrict what gets loaded\n        initURLs();\n",
+    "import org.woheller69.freeDroidWarn.FreeDroidWarn;\n",
+    "        FreeDroidWarn.showWarningOnUpgrade(this, BuildConfig.VERSION_CODE);\n",
 ]:
     s = remove(s, line)
 
@@ -70,6 +73,9 @@ s = remove(s, "        SharedPreferences prefs = PreferenceManager.getDefaultSha
 s = remove(s, '        restricted = prefs.getBoolean("restricted", true);\n', optional=True)
 s = remove(s, '        if (prefs.getBoolean("buttonHidden", false)) restrictedButton.setVisibility(View.GONE);\n', optional=True)
 
+s = re.sub(r"[ \t]*if \(GithubStar\.shouldShowStarDialog\(this\)\)[^\n]*\n", "", s)
+if "GithubStar" in s:
+    fail("GithubStar reference")
 s = cut(s, "    @Override\n    protected void onResume()", "    @Override\n    protected void onCreate")
 s = cut(s, "            //Keep these in sync!", "            //WebResourceError is API 23+")
 s = cut(s, "    public void resetChat()", "    //A blob URL only exists inside")
@@ -86,7 +92,8 @@ s = s[:a] + "            }\n        }\n    }\n\n" + s[b:]
 js = "        chatWebSettings.setJavaScriptEnabled(true);"
 if js not in s:
     fail(js.strip())
-s = s.replace(js, "        chatWebSettings.setUserAgentString(modUserAgent());  //needed for login via Google\n" + js, 1)
+if "chatWebSettings.setUserAgentString(modUserAgent());" not in s:
+    s = s.replace(js, "        chatWebSettings.setUserAgentString(modUserAgent());  //needed for login via Google\n" + js, 1)
 
 # Desktop-like user agent made Gemini serve its desktop popover menu. Keep the mobile layout,
 # only hide the WebView markers ("; wv", "Version/x") so Google sign-in still works.
