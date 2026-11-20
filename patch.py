@@ -157,4 +157,14 @@ bg.write_text(x, encoding="utf-8")
 shutil.copytree(assets / "res", res, dirs_exist_ok=True)
 shutil.copy2(assets / "ic_launcher-playstore.png", root / "app/src/main/ic_launcher-playstore.png")
 
+# Debug build type: keep the release package name and app name
+gradle = root / "app/build.gradle"
+g = gradle.read_text(encoding="utf-8")
+g, n = re.subn(r'[ \t]*applicationIdSuffix\s+"[^"]*"[^\n]*\n', "", g)
+if n != 1:
+    fail("applicationIdSuffix in app/build.gradle")
+g = re.sub(r'[ \t]*versionNameSuffix\s+"[^"]*"[^\n]*\n', "", g)
+gradle.write_text(g, encoding="utf-8")
+shutil.rmtree(root / "app/src/debug", ignore_errors=True)  # overrides app_name with "geminiAssist Debug"
+
 print("patch.py: done")
