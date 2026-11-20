@@ -42,10 +42,15 @@ Upstream blocks every request that is not on a small Google allowlist or not HTT
 | `assets/res/` | Icon resources copied into `app/src/main/res/`. |
 | `assets/ic_launcher-playstore.png` | Source icon, 512x512. |
 | `.github/workflows/BuildFork.yml` | Clones upstream, patches, builds and releases. |
+| `.github/workflows/SyncUpstream.yml` | Merges upstream into this repository. |
 
 ## Build
 
-The workflow runs every 12 hours and on pushes to `patch.py`. It builds only when the upstream commit or `patch.py` changed since the last release. Run it manually with **force** to rebuild.
+The workflow runs on every push to `main` and manually from the Actions tab. It builds only when the upstream commit or `patch.py` changed since the last release. Run it manually with **force** to rebuild. Manual runs publish a release only when **release** is enabled.
+
+## Sync
+
+`SyncUpstream.yml` merges upstream `main` into this repository every 12 hours and on manual run. On conflict, `README.md` and `.github/` always keep this repository's version. Sync commits do not trigger a build.
 
 To patch locally:
 
