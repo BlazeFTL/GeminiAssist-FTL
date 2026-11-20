@@ -1,11 +1,8 @@
 name: Build APK
 
 on:
-  schedule:
-    - cron: '0 */12 * * *'
   push:
     branches: [ main ]
-    paths: [ patch.py, .github/workflows/BuildFork.yml ]
   workflow_dispatch:
     inputs:
       force:
@@ -58,6 +55,18 @@ jobs:
         if: steps.up.outputs.skip != 'true'
         run: python3 patch.py upstream
 
+      - name: Read version
+        id: ver
+        if: steps.up.outputs.skip != 'true'
+        run: |
+          g=upstream/app/build.gradle
+          name=$(sed -nE 's/^[[:space:]]*versionName[[:space:]]+"([^"]+)".*/\1/p' "$g" | head -n1)
+          code=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*/\1/p' "$g" | head -n1)
+          [ -n "$name" ] && [ -n "$code" ] || { echo "Could not read version from $g"; exit 1; }
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "apk=Gemini-Lite-v$name.apk" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-java@v4
         if: steps.up.outputs.skip != 'true'
         with:
@@ -77,39 +86,51 @@ jobs:
 
       - name: Collect APK
         if: steps.up.outputs.skip != 'true'
+        env:
+          APK: ${{ steps.ver.outputs.apk }}
         run: |
           mkdir out
-          cp upstream/app/build/outputs/apk/debug/*.apk out/geminiAssist.apk
+          cp upstream/app/build/outputs/apk/debug/*.apk "out/$APK"
 
       - name: Upload APK
         if: steps.up.outputs.skip != 'true'
         uses: actions/upload-artifact@v7
         with:
-          path: out/geminiAssist.apk
+          path: out/${{ steps.ver.outputs.apk }}
           archive: false
 
       - name: Write changelog
         if: steps.up.outputs.skip != 'true' && (github.event_name != 'workflow_dispatch' || inputs.release)
+        env:
+          VNAME: ${{ steps.ver.outputs.name }}
+          VCODE: ${{ steps.ver.outputs.code }}
+          SHA: ${{ steps.up.outputs.sha }}
         run: |
           cat > notes.md <<EOF
-          Upstream $UPSTREAM@${{ steps.up.outputs.sha }} with patch.py applied.
+          - **Version:** $VNAME (build $VCODE)
+          - **Upstream commit:** [${SHA:0:7}](https://github.com/$UPSTREAM/commit/$SHA)
 
-          ### Patch features
-          - **All URLs allowed.** Allowlist, request blocking and the HTTPS-only rule are removed.
-          - **Toggle button removed.** The hand button, swipe-to-hide, drag logic and long-press reset chat are gone.
-          - **Link long-press URL copy removed.** Image long-press and saving are unchanged.
-          - **Google sign-in fix.** Mobile user agent is applied at startup with the WebView markers (\`; wv\`, \`Version/x\`) stripped.
-          - **No desktop popover.** The desktop-style Linux user agent is no longer used, so Gemini keeps its mobile layout.
-          - **Renamed to Gemini-Lite** with a new launcher icon: legacy, adaptive and themed (monochrome).
+          ### Changes
+
+          - **All URLs allowed.** Allowlist, request blocking and HTTPS-only rule removed.
+          - **Toggle button removed.** Hand button, swipe-to-hide, drag logic and long-press reset chat removed.
+          - **Link long-press URL copy removed.** Image long-press and saving unchanged.
+          - **Google sign-in fixed.** Mobile user agent applied at startup, with WebView markers (wv, Version/x) stripped.
+          - **No desktop popover.** Desktop-style Linux user agent dropped, so Gemini keeps its mobile layout.
+          - **Renamed to Gemini-Lite** with a new launcher icon (legacy, adaptive and themed).
           EOF
 
       - name: Publish release
         if: steps.up.outputs.skip != 'true' && (github.event_name != 'workflow_dispatch' || inputs.release)
         env:
           GH_TOKEN: ${{ github.token }}
+          VNAME: ${{ steps.ver.outputs.name }}
+          APK: ${{ steps.ver.outputs.apk }}
+          SHA: ${{ steps.up.outputs.sha }}
         run: |
           tag="${{ steps.up.outputs.tag }}"
           gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
-          gh release create "$tag" out/geminiAssist.apk \
-            --title "geminiAssist (upstream ${tag:3:7})" \
-            --notes-file notes.md
+          gh release create "$tag" "out/$APK" \
+            --title "Gemini-Lite v$VNAME (${SHA:0:7})" \
+            --notes-file notes.md \
+            --latest

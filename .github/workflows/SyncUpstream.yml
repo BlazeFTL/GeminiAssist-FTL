@@ -1,0 +1,58 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '23 */12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: AcideFluorhydrique/geminiAssist
+  UPSTREAM_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # GITHUB_TOKEN cannot push upstream commits that touch .github/workflows.
+          # If that happens, add a PAT with workflow scope as repo secret SYNC_TOKEN.
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Merge upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git fetch upstream "$UPSTREAM_BRANCH"
+          sha=$(git rev-parse FETCH_HEAD)
+
+          if git merge-base --is-ancestor "$sha" HEAD; then
+            echo "Already up to date"
+            exit 0
+          fi
+
+          git merge --no-commit --no-ff "$sha" || true
+          [ -f .git/MERGE_HEAD ] || { echo "Merge could not start"; exit 1; }
+
+          # Always keep our README and workflows
+          git rm -rq --cached --ignore-unmatch README.md .github
+          git checkout HEAD -- README.md .github
+
+          left=$(git ls-files -u | cut -f2 | sort -u)
+          if [ -n "$left" ]; then
+            echo "Unresolved conflicts:"
+            echo "$left"
+            exit 1
+          fi
+
+          git commit -m "Merge upstream ${sha:0:7}"
+          git push origin "HEAD:$GITHUB_REF_NAME"
