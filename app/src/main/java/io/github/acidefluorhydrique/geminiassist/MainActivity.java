@@ -31,6 +31,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Rect;
 
 import android.media.MediaScannerConnection;
 import android.os.Build;
@@ -405,6 +406,12 @@ public class MainActivity extends Activity {
             if (!buttonDragging) placeButton(prefs.getFloat("buttonX", 1f), prefs.getFloat("buttonY", 0f));
         });
 
+        //The button starts at the screen edge, where gesture navigation would take a drag as Back and close the app
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            restrictedButton.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                    excludeFromSystemGestures(v));
+        }
+
         restrictedButton.setOnTouchListener(new View.OnTouchListener() {
             private float downRawX, downRawY, downX, downY;
 
@@ -446,6 +453,11 @@ public class MainActivity extends Activity {
                 return false;
             }
         });
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    private static void excludeFromSystemGestures(View v) {
+        v.setSystemGestureExclusionRects(Collections.singletonList(new Rect(0, 0, v.getWidth(), v.getHeight())));
     }
 
     //The parent pads itself for the system bars (fitsSystemWindows), keep the button inside that padding
@@ -599,6 +611,8 @@ public class MainActivity extends Activity {
         allowedDomains.add("gstatic.com");            //static assets and fonts
         allowedDomains.add("googleusercontent.com");  //avatars, uploaded and generated images
         allowedDomains.add("googleapis.com");         //backend APIs used by the app
+        allowedDomains.add("push.clients6.google.com");          //file and image uploads (issue #5)
+        allowedDomains.add("geminiweb-pa.clients6.google.com");  //Gemini's own web API, called while uploading
     }
 
     private static boolean isAllowed(String host) {
