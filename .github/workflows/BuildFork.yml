@@ -117,6 +117,7 @@ jobs:
           - **Link long-press URL copy removed.** Image long-press and saving unchanged.
           - **Google sign-in fixed.** Mobile user agent applied at startup, with WebView markers (wv, Version/x) stripped.
           - **No desktop popover.** Desktop-style Linux user agent dropped, so Gemini keeps its mobile layout.
+          - **Element blocker.** Button right of the profile icon. Tap elements to hide them, rules saved on the device.
           - **Renamed to Gemini-Lite** with a new launcher icon (legacy, adaptive and themed).
           EOF
 

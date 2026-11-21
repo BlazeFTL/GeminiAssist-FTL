@@ -2,6 +2,7 @@
 """Usage: python3 patch.py <path-to-geminiAssist-checkout>
 
 Removes the URL-restriction hand button and allows all URLs.
+Adds an element blocker (assets/element_blocker.js, injected at document start) next to the profile icon.
 Renames the app to Gemini-Lite and replaces the launcher icon with assets/ (next to this file).
 Fails loudly when an anchor is missing, so upstream changes never go unnoticed.
 """
@@ -108,6 +109,42 @@ ua = (
 k = s.find("    @Override\n    public void onRequestPermissionsResult")
 s = s[:k] + ua + s[k:]
 
+# Element blocker: script from assets/, injected into the Gemini origin before the page runs
+blocker = assets / "element_blocker.js"
+if not blocker.is_file():
+    fail("assets/element_blocker.js next to patch.py")
+more = "        //Set more options\n"
+if more not in s:
+    fail(more.strip())
+s = s.replace(
+    more,
+    "        //Element blocker button next to the profile icon\n"
+    "        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {\n"
+    "            WebViewCompat.addDocumentStartJavaScript(chatWebView, readAsset(\"element_blocker.js\"),\n"
+    "                    Collections.singleton(GEMINI_ORIGIN));\n"
+    "        }\n\n" + more,
+    1,
+)
+blob = "    //A blob URL only exists inside"
+if blob not in s:
+    fail(blob.strip())
+s = s.replace(
+    blob,
+    "    private String readAsset(String name) {\n"
+    "        try (java.io.InputStream in = getAssets().open(name)) {\n"
+    "            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();\n"
+    "            byte[] buffer = new byte[8192];\n"
+    "            int read;\n"
+    "            while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);\n"
+    "            return out.toString(\"UTF-8\");\n"
+    "        } catch (IOException e) {\n"
+    "            Log.e(TAG, \"[readAsset] \" + name, e);\n"
+    "            return \"\";\n"
+    "        }\n"
+    "    }\n\n" + blob,
+    1,
+)
+
 for name in [
     "static android.webkit.WebView.HitTestResult.SRC_ANCHOR_TYPE",
     "static android.webkit.WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE",
@@ -163,6 +200,10 @@ if n != 1:
 bg.write_text(x, encoding="utf-8")
 shutil.copytree(assets / "res", res, dirs_exist_ok=True)
 shutil.copy2(assets / "ic_launcher-playstore.png", root / "app/src/main/ic_launcher-playstore.png")
+
+assets_dir = root / "app/src/main/assets"
+assets_dir.mkdir(parents=True, exist_ok=True)
+shutil.copy2(blocker, assets_dir / "element_blocker.js")
 
 # Debug build type: keep the release package name and app name
 gradle = root / "app/build.gradle"
