@@ -388,16 +388,10 @@
     return r.width > 0 && r.height > 0;
   }
 
-  function findAvatar() {
-    var l = document.querySelectorAll('a[href*="/SignOutOptions"]');
-    for (var i = 0; i < l.length; i++) {
-      if (visible(l[i])) return l[i];
-    }
-    var g = document.getElementById('gb');
-    if (!g) return null;
+  function rightmost(root) {
     var best = null;
     var edge = 0;
-    var c = g.querySelectorAll('a,button');
+    var c = root.querySelectorAll('a,button');
     for (var j = 0; j < c.length; j++) {
       var r = c[j].getBoundingClientRect();
       if (r.width && r.height && r.top < 120 && r.right > innerWidth * 0.5 && r.right > edge) {
@@ -406,6 +400,20 @@
       }
     }
     return best;
+  }
+
+  function findAvatar() {
+    var l = document.querySelectorAll('a[href*="/SignOutOptions"]');
+    for (var i = 0; i < l.length; i++) {
+      if (visible(l[i])) return l[i];
+    }
+    var o = document.querySelectorAll('.signed-out-buttons');
+    for (var k = 0; k < o.length; k++) {
+      var b = rightmost(o[k]);
+      if (b) return b;
+    }
+    var g = document.getElementById('gb');
+    return g ? rightmost(g) : null;
   }
 
   function findNeighbors(a, r) {
@@ -504,13 +512,18 @@
     if (blockSheet && document.adoptedStyleSheets.indexOf(blockSheet) < 0) applyBlocks();
     positionHl();
 
+    var pref = document.querySelector('a[href*="/SignOutOptions"]');
+    if (pref && pref !== st.avatar && visible(pref)) {
+      clearShift();
+      st.avatar = pref;
+    }
     var a = st.avatar;
     if (!a || !a.isConnected) {
       clearShift();
       st.avatar = a = findAvatar();
     }
     if (!a) {
-      var raw = document.querySelector('a[href*="/SignOutOptions"]');
+      var raw = document.querySelector('a[href*="/SignOutOptions"],.signed-out-buttons');
       if ((raw && hitByBlock(raw)) || (!st.found && Date.now() - st.t0 > 6000)) floating();
       else hdr.style.display = 'none';
       return;
@@ -522,11 +535,6 @@
       clearShift();
       if (hitByBlock(a)) floating();
       else hdr.style.display = 'none';
-      return;
-    }
-    if (innerWidth < 768 && document.querySelector('chat-app.side-nav-open')) {
-      clearShift();
-      hdr.style.display = 'none';
       return;
     }
 
