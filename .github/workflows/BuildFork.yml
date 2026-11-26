@@ -34,7 +34,7 @@ jobs:
         run: |
           sha=$(git ls-remote "https://github.com/$UPSTREAM.git" "refs/heads/$UPSTREAM_BRANCH" | cut -f1)
           [ -n "$sha" ] || { echo "Could not read upstream head"; exit 1; }
-          psha=$(sha256sum patch.py | cut -c1-6)
+          psha=$(cat patch.py patch2.py $(find assets -type f | sort) | sha256sum | cut -c1-6)
           tag="up-${sha:0:7}-p$psha"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -53,7 +53,9 @@ jobs:
 
       - name: Apply patch
         if: steps.up.outputs.skip != 'true'
-        run: python3 patch.py upstream
+        run: |
+          python3 patch.py upstream
+          python3 patch2.py upstream
 
       - name: Read version
         id: ver
@@ -119,6 +121,10 @@ jobs:
           - **No desktop popover.** Desktop-style Linux user agent dropped, so Gemini keeps its mobile layout.
           - **Element blocker.** Button right of the profile icon. Tap elements to hide them, rules saved on the device.
           - **Renamed to Gemini-Lite** with a new launcher icon (legacy, adaptive and themed).
+          - **System bars follow the page.** Status and navigation bars take Gemini's light or dark background instead of black.
+          - **Multiple photos and files.** The picker uses the page's accept types and allows multi-select.
+          - **Digital assistant.** Listed under Default digital assistant app. Home long-press opens the app with the prompt focused.
+          - **Static file cache.** Gemini's scripts, fonts and images from gstatic.com are kept on disk (up to 256 MB, 30 days). Analytics and ad tags are blocked.
           EOF
 
       - name: Publish release

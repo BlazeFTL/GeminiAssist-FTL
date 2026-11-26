@@ -2,7 +2,7 @@
 
 Gemini-Lite is a patched build of [geminiAssist](https://github.com/AcideFluorhydrique/geminiAssist), a lightweight WebView wrapper for Gemini.
 
-This repository does not carry modified app sources. A GitHub Actions workflow clones upstream, applies `patch.py`, builds the APK and publishes it as a release.
+This repository does not carry modified app sources. A GitHub Actions workflow clones upstream, applies `patch.py` and `patch2.py`, builds the APK and publishes it as a release.
 
 ## What the patch does
 
@@ -24,6 +24,30 @@ Upstream blocks every request that is not on a small Google allowlist or not HTT
 - Upstream used a desktop-style Linux user agent, which made Gemini serve its desktop popover menu.
 - Gemini-Lite keeps the mobile user agent and strips only the WebView markers (`; wv` and `Version/x.x`). The mobile layout stays and Google sign-in still works.
 
+### System bars
+
+- Upstream left the status and navigation bars black.
+- `patch2.py` colours them from the page background (`#FAF9F9` light, `#000000` dark) and sets dark or light icons to match.
+- A document-start script (`assets/theme_sync.js`) reports the page colour whenever Gemini switches theme. The last colour per system theme is saved, so the bars are right before the page loads.
+
+### Photo and file picker
+
+- Upstream opened a picker without multi-select, so only one photo could be chosen.
+- The picker now comes from the page's own request (`FileChooserParams.createIntent()`), so accept types and the `multiple` attribute are honoured, and multi-select results are returned.
+
+### Digital assistant
+
+- `MainActivity` handles `android.intent.action.ASSIST`, so the app is listed under Settings > Default digital assistant app.
+- When opened that way, the prompt box is focused.
+
+### Static file cache and tracker blocking
+
+- `assets/AssetCache.java` serves scripts, styles, fonts, images, JSON and WASM from `*.gstatic.com` from a disk cache (`cache/asset-cache`, up to 256 MB, least recently used removed first).
+- Files are kept for the server's `max-age`, at most 30 days. Files that are not cacheable pass straight through. If anything fails, the WebView loads the request itself.
+- The page, API calls and all other hosts are untouched.
+- Requests to Google Tag Manager, Google Analytics and ad domains are dropped.
+- The first launch after an update downloads the files once.
+
 ### Branding
 
 - App name is changed to **Gemini-Lite** in all locales that define `app_name`.
@@ -38,7 +62,10 @@ Upstream blocks every request that is not on a small Google allowlist or not HTT
 
 | Path | Purpose |
 | --- | --- |
-| `patch.py` | Applies all changes to an upstream checkout. |
+| `patch.py` | Applies the main changes to an upstream checkout. |
+| `patch2.py` | Applies the second set of changes. Run after `patch.py`. |
+| `assets/AssetCache.java` | Static file cache and tracker blocker, copied into the app. |
+| `assets/theme_sync.js` | Reports the page colour for the system bars. |
 | `assets/res/` | Icon resources copied into `app/src/main/res/`. |
 | `assets/ic_launcher-playstore.png` | Source icon, 512x512. |
 | `.github/workflows/BuildFork.yml` | Clones upstream, patches, builds and releases. |
@@ -46,7 +73,7 @@ Upstream blocks every request that is not on a small Google allowlist or not HTT
 
 ## Build
 
-The workflow runs on every push to `main` and manually from the Actions tab. It builds only when the upstream commit or `patch.py` changed since the last release. Run it manually with **force** to rebuild. Manual runs publish a release only when **release** is enabled.
+The workflow runs on every push to `main` and manually from the Actions tab. It builds only when the upstream commit, `patch.py`, `patch2.py` or anything in `assets/` changed since the last release. Run it manually with **force** to rebuild. Manual runs publish a release only when **release** is enabled.
 
 ## Sync
 
@@ -57,14 +84,15 @@ To patch locally:
 ```
 git clone https://github.com/AcideFluorhydrique/geminiAssist upstream
 python3 patch.py upstream
+python3 patch2.py upstream
 cd upstream && ./gradlew assembleDebug
 ```
 
-`patch.py` is not idempotent. Run it on a fresh checkout only.
+`patch.py` and `patch2.py` are not idempotent. Run them on a fresh checkout only.
 
 ## Updating the icon
 
-Replace the files in `assets/`, then change `patch.py` (any edit) so the workflow detects a new build.
+Replace the files in `assets/`. The workflow detects the change and builds again.
 
 ## License
 
