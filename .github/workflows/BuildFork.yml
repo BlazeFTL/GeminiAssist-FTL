@@ -121,7 +121,7 @@ jobs:
           - **No desktop popover.** Desktop-style Linux user agent dropped, so Gemini keeps its mobile layout.
           - **Element blocker.** Button right of the profile icon. Tap elements to hide them, rules saved on the device.
           - **Renamed to Gemini-Lite** with a new launcher icon (legacy, adaptive and themed).
-          - **System bars follow the page.** Status and navigation bars take Gemini's light or dark background instead of black.
+          - **System bars follow the page.** Status bar takes the page colour, including the dim while a sheet is open. Navigation bar uses Gemini's surface colour, and the sheet colour while a sheet is open.
           - **Multiple photos and files.** The picker uses the page's accept types and allows multi-select.
           - **Digital assistant.** Listed under Default digital assistant app. Home long-press opens the app with the prompt focused.
           - **Static file cache.** Gemini's scripts, fonts and images from gstatic.com are kept on disk (up to 256 MB, 30 days). Analytics and ad tags are blocked.
