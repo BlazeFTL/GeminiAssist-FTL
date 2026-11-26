@@ -57,7 +57,12 @@ s = replace_once(
     "    private boolean barSampling = false;\n"
     "    private int pageColor = 0xFFFAF9F9;\n"
     "    private int lastStatusColor = 0;\n"
-    "    private int lastNavColor = 0;\n",
+    "    private int lastNavColor = 0;\n"
+    "    private int lastLight = -1;\n"
+    "    private int barTargetStatus = 0;\n"
+    "    private int barTargetNav = 0;\n"
+    "    private long barDeadline = 0;\n"
+    "    private boolean barLoop = false;\n",
 )
 
 # System bars: stop the black bars, colour them from the page
@@ -239,8 +244,53 @@ s = replace_once(
     }
 
     private void scheduleBarSample() {
-        barHandler.removeCallbacks(barSampler);
-        for (int delay : new int[]{60, 200, 380, 600, 950}) barHandler.postDelayed(barSampler, delay);
+        barDeadline = android.os.SystemClock.uptimeMillis() + 1000;
+        if (barLoop) return;
+        barLoop = true;
+        barHandler.post(barSampler);
+    }
+
+    private static int lum(int c) {
+        return android.graphics.Color.red(c) * 299 + android.graphics.Color.green(c) * 587 + android.graphics.Color.blue(c) * 114;
+    }
+
+    private static int approach(int cur, int target) {
+        if (cur == 0 || cur == target) return target;
+        int out = 0xFF000000;
+        for (int shift = 16; shift >= 0; shift -= 8) {
+            int c = (cur >> shift) & 0xFF;
+            int t = (target >> shift) & 0xFF;
+            int d = t - c;
+            out |= (Math.abs(d) <= 2 ? t : c + d / 2) << shift;
+        }
+        return out;
+    }
+
+    private static int dimmed(int base, int top, int page) {
+        int out = 0xFF000000;
+        for (int shift = 16; shift >= 0; shift -= 8) {
+            float f = Math.min(1f, ((top >> shift) & 0xFF) / (float) Math.max(1, (page >> shift) & 0xFF));
+            out |= Math.round(((base >> shift) & 0xFF) * f) << shift;
+        }
+        return out;
+    }
+
+    private void barStep(int targetStatus, int targetNav) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (targetStatus != barTargetStatus || targetNav != barTargetNav) {
+            barTargetStatus = targetStatus;
+            barTargetNav = targetNav;
+            barDeadline = Math.max(barDeadline, now + 400);
+        }
+        int status = approach(lastStatusColor, targetStatus);
+        int nav = approach(lastNavColor, targetNav);
+        applySystemBars(status, nav);
+        barSampling = false;
+        if (now < barDeadline || status != targetStatus || nav != targetNav) {
+            barHandler.postDelayed(barSampler, 24);
+        } else {
+            barLoop = false;
+        }
     }
 
     private interface PixelListener {
@@ -259,8 +309,15 @@ s = replace_once(
     }
 
     private void sampleBars() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || chatWebView == null || barSampling
-                || !chatWebView.isShown() || chatWebView.getWidth() < 16 || chatWebView.getHeight() < 16) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || chatWebView == null
+                || !chatWebView.isShown() || chatWebView.getWidth() < 16 || chatWebView.getHeight() < 16) {
+            barLoop = false;
+            return;
+        }
+        if (barSampling) {
+            barHandler.postDelayed(barSampler, 24);
+            return;
+        }
         if (barPixel == null) barPixel = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888);
         int[] loc = new int[2];
         chatWebView.getLocationInWindow(loc);
@@ -271,16 +328,16 @@ s = replace_once(
         samplePixel(x, topY, top -> {
             if (top == 0) {
                 barSampling = false;
+                barLoop = false;
                 return;
             }
             if (!differs(top, pageColor)) {
-                barSampling = false;
-                applySystemBars(pageColor, navFor(pageColor));
+                barStep(pageColor, navFor(pageColor));
                 return;
             }
             samplePixel(x, bottomY, bottom -> {
-                barSampling = false;
-                applySystemBars(top, bottom != 0 ? bottom : navFor(pageColor));
+                int estimate = dimmed(navFor(pageColor), top, pageColor);
+                barStep(top, bottom != 0 && lum(bottom) > lum(estimate) ? bottom : estimate);
             });
         });
     }
@@ -327,6 +384,9 @@ s = replace_once(
         if (status == lastStatusColor && nav == lastNavColor) return;
         lastStatusColor = status;
         lastNavColor = nav;
+        int light = (isLight(status) ? 1 : 0) | (isLight(nav) ? 2 : 0);
+        boolean appearanceChanged = light != lastLight;
+        lastLight = light;
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.setBackgroundDrawable(new BarsBackground(chatWebView == null ? null : (View) chatWebView.getParent(), status, nav));
@@ -334,6 +394,7 @@ s = replace_once(
         window.setNavigationBarColor(nav);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.setNavigationBarContrastEnforced(false);
 
+        if (!appearanceChanged) return;
         boolean lightStatus = isLight(status);
         boolean lightNav = isLight(nav);
         View decor = window.getDecorView();
