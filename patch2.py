@@ -50,7 +50,14 @@ s = replace_once(
     '    private String urlToLoad = "https://gemini.google.com/";\n'
     '    private static final String THEME_JS_OBJECT = "geminiLiteTheme";\n'
     "    private AssetCache assetCache;\n"
-    "    private boolean focusPromptPending = false;  //opened as the digital assistant, focus the prompt once the page is ready\n",
+    "    private boolean focusPromptPending = false;  //opened as the digital assistant, focus the prompt once the page is ready\n"
+    "    private final android.os.Handler barHandler = new android.os.Handler(android.os.Looper.getMainLooper());\n"
+    "    private final Runnable barSampler = this::sampleBars;\n"
+    "    private android.graphics.Bitmap barPixel;\n"
+    "    private boolean barSampling = false;\n"
+    "    private int pageColor = 0xFFFAF9F9;\n"
+    "    private int lastStatusColor = 0;\n"
+    "    private int lastNavColor = 0;\n",
 )
 
 # System bars: stop the black bars, colour them from the page
@@ -64,7 +71,9 @@ s = replace_once(
     "        chatWebView = findViewById(R.id.chatWebView);\n",
     "        chatWebView = findViewById(R.id.chatWebView);\n"
     "        assetCache = new AssetCache(getApplicationContext());\n"
-    "        applySystemBars(savedBarColor());\n",
+    "        pageColor = savedBarColor();\n"
+    "        chatWebView.setBackgroundColor(pageColor);\n"
+    "        applySystemBars(pageColor, navFor(pageColor));\n",
 )
 
 # WebViewClient: disk cache for static files, focus the prompt when opened as assistant
@@ -81,6 +90,7 @@ s = replace_once(
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                scheduleBarSample();
                 if (focusPromptPending) {
                     focusPromptPending = false;
                     focusPrompt();
@@ -191,9 +201,12 @@ s = replace_once(
     private void onPageColor(String css) {
         int color = parseCssColor(css);
         if (color == 0) return;
-        applySystemBars(color);
+        pageColor = color;
+        if (chatWebView != null) chatWebView.setBackgroundColor(color);
         getSharedPreferences("gemini_lite", MODE_PRIVATE).edit()
                 .putInt(isNight() ? "bar_dark" : "bar_light", color).apply();
+        applySystemBars(color, navFor(color));
+        scheduleBarSample();
     }
 
     private static int parseCssColor(String css) {
@@ -210,32 +223,155 @@ s = replace_once(
         }
     }
 
+    private static boolean isLight(int color) {
+        return (android.graphics.Color.red(color) * 299 + android.graphics.Color.green(color) * 587
+                + android.graphics.Color.blue(color) * 114) / 1000 > 140;
+    }
+
+    private static int navFor(int page) {
+        return isLight(page) ? 0xFFF0F4F9 : 0xFF1E1F20;
+    }
+
+    private static boolean differs(int a, int b) {
+        return Math.abs(android.graphics.Color.red(a) - android.graphics.Color.red(b)) >= 4
+                || Math.abs(android.graphics.Color.green(a) - android.graphics.Color.green(b)) >= 4
+                || Math.abs(android.graphics.Color.blue(a) - android.graphics.Color.blue(b)) >= 4;
+    }
+
+    private void scheduleBarSample() {
+        barHandler.removeCallbacks(barSampler);
+        for (int delay : new int[]{60, 200, 380, 600, 950}) barHandler.postDelayed(barSampler, delay);
+    }
+
+    private interface PixelListener {
+        void onPixel(int color);
+    }
+
+    private void samplePixel(int x, int y, PixelListener listener) {
+        try {
+            android.view.PixelCopy.request(getWindow(), new Rect(x, y, x + 1, y + 1), barPixel,
+                    result -> listener.onPixel(result == android.view.PixelCopy.SUCCESS
+                            ? (barPixel.getPixel(0, 0) | 0xFF000000) : 0),
+                    barHandler);
+        } catch (IllegalArgumentException e) {
+            listener.onPixel(0);
+        }
+    }
+
+    private void sampleBars() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || chatWebView == null || barSampling
+                || !chatWebView.isShown() || chatWebView.getWidth() < 16 || chatWebView.getHeight() < 16) return;
+        if (barPixel == null) barPixel = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888);
+        int[] loc = new int[2];
+        chatWebView.getLocationInWindow(loc);
+        final int x = loc[0] + 6;
+        final int topY = loc[1] + 3;
+        final int bottomY = loc[1] + chatWebView.getHeight() - 3;
+        barSampling = true;
+        samplePixel(x, topY, top -> {
+            if (top == 0) {
+                barSampling = false;
+                return;
+            }
+            if (!differs(top, pageColor)) {
+                barSampling = false;
+                applySystemBars(pageColor, navFor(pageColor));
+                return;
+            }
+            samplePixel(x, bottomY, bottom -> {
+                barSampling = false;
+                applySystemBars(top, bottom != 0 ? bottom : navFor(pageColor));
+            });
+        });
+    }
+
+    private static final class BarsBackground extends android.graphics.drawable.Drawable {
+        private final View root;
+        private final int top;
+        private final int bottom;
+        private final android.graphics.Paint paint = new android.graphics.Paint();
+
+        BarsBackground(View root, int top, int bottom) {
+            this.root = root;
+            this.top = top;
+            this.bottom = bottom;
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            Rect b = getBounds();
+            int inset = root == null ? 0 : root.getPaddingBottom();
+            paint.setColor(top);
+            canvas.drawRect(b.left, b.top, b.right, b.bottom - inset, paint);
+            paint.setColor(bottom);
+            canvas.drawRect(b.left, b.bottom - inset, b.right, b.bottom, paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter colorFilter) {
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.OPAQUE;
+        }
+    }
+
     @SuppressWarnings("deprecation")
-    private void applySystemBars(int color) {
+    private void applySystemBars(int status, int nav) {
+        if (status == lastStatusColor && nav == lastNavColor) return;
+        lastStatusColor = status;
+        lastNavColor = nav;
         Window window = getWindow();
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(color));  //shows behind the bars when edge-to-edge is enforced
-        window.setStatusBarColor(color);
-        window.setNavigationBarColor(color);
+        window.setBackgroundDrawable(new BarsBackground(chatWebView == null ? null : (View) chatWebView.getParent(), status, nav));
+        window.setStatusBarColor(status);
+        window.setNavigationBarColor(nav);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.setNavigationBarContrastEnforced(false);
-        if (chatWebView != null) chatWebView.setBackgroundColor(color);  //no flash before the page paints
 
-        boolean light = (android.graphics.Color.red(color) * 299 + android.graphics.Color.green(color) * 587
-                + android.graphics.Color.blue(color) * 114) / 1000 > 140;
+        boolean lightStatus = isLight(status);
+        boolean lightNav = isLight(nav);
         View decor = window.getDecorView();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             android.view.WindowInsetsController controller = window.getInsetsController();
             if (controller != null) {
-                int mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                        | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                controller.setSystemBarsAppearance(light ? mask : 0, mask);
+                int s = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
+                int n = android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(lightStatus ? s : 0, s);
+                controller.setSystemBarsAppearance(lightNav ? n : 0, n);
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             int flags = decor.getSystemUiVisibility();
-            int bits = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) bits |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-            decor.setSystemUiVisibility(light ? flags | bits : flags & ~bits);
+            flags = lightStatus ? flags | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR : flags & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = lightNav ? flags | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : flags & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            }
+            decor.setSystemUiVisibility(flags);
         }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int action = ev.getActionMasked();
+        if (action == android.view.MotionEvent.ACTION_UP || action == android.view.MotionEvent.ACTION_CANCEL) scheduleBarSample();
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_UP) scheduleBarSample();
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        scheduleBarSample();
     }
 
     @Override
